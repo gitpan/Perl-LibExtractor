@@ -33,7 +33,7 @@ manipulate them in other ways.
 
 package Perl::LibExtractor;
 
-our $VERSION = '1.0';
+our $VERSION = '1.1';
 
 use Config;
 use File::Spec ();
@@ -555,9 +555,11 @@ strict>.
 sub add_eval {
    my ($self, $eval) = @_;
 
+   (my $file = substr $eval, 0, 64) =~ s/\015?\012/\\n/g;
+
    my $pkg = "libextractor" . ++$self->{count};
    $eval =~ s/\x00/\x00."\\x00".q\x00/g;
-   $self->_trace ($eval,
+   $self->_trace ($file,
       "local \$^H = \$^H;" # vvvvvvvvvvvvvvvvvvvv = use strict; use utf8
       . "eval q\x00package $pkg; BEGIN { \$^H = \$^H | 0x800600 } $eval\x00; die \"\$\@\" if \$\@;\n"
    );
@@ -639,9 +641,18 @@ L<PerlIO::encoding>, and named character and character class matches.
 sub add_core_support {
    my ($self) = @_;
 
-   $self->add_eval ('my $v; open my $fh, "<", \$v');
-   $self->add_eval ('my $x = chr 1234; "\u$x\U$x\l$x\L$x"; $x =~ /\d|\w|\s|\b|\R|\h|\v|$x/i');
-   $self->add_eval ('split " ", chr 1234'); # usually covered by the regex above
+   $self->add_eval ('
+      # PerlIO::Scalar
+      my $v; open my $fh, "<", \$v;
+
+      # various unicore regex/builtin gambits
+      my $x = chr 1234;
+      "\u$x\U$x\l$x\L$x";
+      $x =~ /$_$x?/i
+         for qw(\d \w \s \b \R \h \v);
+      split " ", $x; # usually covered by the regex above
+   ');
+
    $self->add_eval ('/\x{1234}(?<a>)\g{a}/') if $] >= 5.010; # usually covered by the regex above
 }
 
